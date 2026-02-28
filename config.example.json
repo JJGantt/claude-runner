@@ -1,0 +1,9 @@
+{
+  "data_dir": "/home/jaredgantt/data",
+  "mcp_history_dir": "/home/jaredgantt/mcp-history",
+  "home_dir": "/home/jaredgantt",
+  "mode_file": "/home/jaredgantt/data/route_mode.json",
+  "codex_bin": "/home/jaredgantt/.npm-global/bin/codex",
+  "max_context_chars": 12000,
+  "context_hours": 24
+}
