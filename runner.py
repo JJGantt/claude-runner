@@ -282,7 +282,7 @@ def _parse_trace(raw_json: str) -> tuple[str, list, bool]:
             if typ == "result":
                 response = item.get("result", "")
             elif typ == "assistant":
-                content = item.get("content", [])
+                content = item.get("content") or item.get("message", {}).get("content", [])
                 if isinstance(content, list):
                     for block in content:
                         if block.get("type") == "tool_use":
@@ -370,6 +370,30 @@ def _build_hybrid_context(summaries, recent_entries):
     return "\n".join(parts)
 
 
+_TELEGRAM_SYSTEM_INSTRUCTIONS = """
+
+# Telegram Formatting Instructions
+
+When responding via Telegram, use HTML formatting tags (the bot sends with parse_mode='HTML'):
+
+Supported HTML tags:
+- <b>bold text</b> or <strong>bold text</strong>
+- <i>italic text</i> or <em>italic text</em>
+- <u>underline</u>
+- <s>strikethrough</s>
+- <code>inline code</code>
+- <pre>code blocks</pre>
+- <blockquote>blockquotes</blockquote>
+- <a href="url">links</a>
+
+Important:
+- Do NOT use Markdown syntax (`**bold**`, `_italic_`, etc.) — it will display as raw text
+- Use HTML tags instead — they will render properly in the Telegram app
+- Remember to escape special HTML characters in regular text: use &lt; for <, &gt; for >, &amp; for &
+- Keep formatting clean and readable — use bold for emphasis, code tags for technical terms, etc.
+"""
+
+
 def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> str:
     """
     Run claude -p with recent history as context, save the exchange, return response.
@@ -379,6 +403,9 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
         source:  Where it came from — "pi-telegram", "claude-http", etc.
         model:   Claude model — "sonnet", "opus", "haiku".
     """
+    import time as _time
+    t0 = _time.monotonic()
+
     channel = _source_channel(source)
     summaries = load_recent_summaries(channel=None if source in _ALL_CONTEXT_SOURCES else channel)
     if source in _ALL_CONTEXT_SOURCES:
@@ -388,10 +415,24 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
     recent = recent[-RECENT_RAW_COUNT:]
     system_ctx = _build_hybrid_context(summaries, recent)
 
-    log.info(f"Running claude (source={source}, channel={channel}, model={model}, summaries={len(summaries)}, recent_entries={len(recent)})")
+    t_ctx = _time.monotonic()
+    ctx_len = len(system_ctx) if system_ctx else 0
+    log.info(f"Running claude (source={source}, channel={channel}, model={model}, summaries={len(summaries)}, recent_entries={len(recent)}, ctx_chars={ctx_len}, ctx_build={t_ctx - t0:.2f}s)")
 
     env = os.environ.copy()
     env["CLAUDE_SOURCE"] = source
+    bot_token = env.get("BOT_TOKEN", "")
+    if "telegram" in source and bot_token:
+        log.info(f"BOT_TOKEN propagated to subprocess (token ends ...{bot_token[-6:]})")
+    elif "telegram" in source:
+        log.warning(f"BOT_TOKEN NOT found in environment for telegram source={source}")
+
+    # Add Telegram formatting instructions if source is Telegram-based
+    if "telegram" in source.lower():
+        if system_ctx:
+            system_ctx = system_ctx + _TELEGRAM_SYSTEM_INSTRUCTIONS
+        else:
+            system_ctx = _TELEGRAM_SYSTEM_INSTRUCTIONS.strip()
 
     cmd = ["claude", "-p", "--dangerously-skip-permissions", "--model", model,
            "--output-format", "json", "--verbose", "-"]
@@ -400,6 +441,7 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
                "--append-system-prompt", system_ctx,
                "--output-format", "json", "--verbose", "-"]
 
+    t_pre = _time.monotonic()
     result = subprocess.run(
         cmd,
         input=message,
@@ -408,6 +450,8 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
         cwd=str(HOME_DIR),
         env=env,
     )
+    t_claude = _time.monotonic()
+    log.info(f"Claude subprocess done (rc={result.returncode}, claude_time={t_claude - t_pre:.1f}s, total={t_claude - t0:.1f}s)")
     raw = (result.stdout or "").strip()
     if result.returncode != 0 and not raw:
         stderr = (result.stderr or "").strip()
