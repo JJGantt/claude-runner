@@ -63,6 +63,9 @@ def _import_history_io():
 _history_io = _import_history_io()
 _mcp_append_entry = _history_io.append_entry
 _mcp_load_range = _history_io.load_history_range
+_mcp_load_summaries = _history_io.load_summaries_range
+
+RECENT_RAW_COUNT = 10  # Always include this many recent raw exchanges
 
 log = logging.getLogger(__name__)
 
@@ -296,6 +299,77 @@ def _parse_trace(raw_json: str) -> tuple[str, list, bool]:
 # Claude invocation
 # ---------------------------------------------------------------------------
 
+
+def load_recent_summaries(channel=None):
+    """Load session summaries for the last 7 days, filtered to channel."""
+    now = datetime.now()
+    start = now - timedelta(days=7)
+    summaries = _mcp_load_summaries(start, now)
+    summaries = [s for s in summaries
+                 if s.get("summary") and s.get("summary") != "Summary unavailable."]
+    if channel is None:
+        return summaries
+    filtered = []
+    for s in summaries:
+        if s.get("channel") == channel:
+            filtered.append(s)
+        elif channel in s.get("sources", []):
+            filtered.append(s)
+    return filtered
+
+
+def _build_hybrid_context(summaries, recent_entries):
+    """Build context from session summaries + most recent raw exchanges."""
+    if not summaries and not recent_entries:
+        return None
+
+    parts = [_CONTEXT_FRAMING]
+    total = 0
+
+    if summaries:
+        parts.append("Session summaries (oldest \u2192 newest):\n")
+        prev_end = None
+        for s in sorted(summaries, key=lambda x: x.get("start", "")):
+            try:
+                start_dt = datetime.fromisoformat(s["start"])
+                end_dt = datetime.fromisoformat(s["end"])
+            except (KeyError, ValueError):
+                continue
+            start_str = start_dt.strftime("%Y-%m-%d %H:%M")
+            end_str = end_dt.strftime("%H:%M")
+            if prev_end is not None:
+                gap = (start_dt - prev_end).total_seconds()
+                if gap >= _GAP_THRESHOLD_SECS:
+                    parts.append("\n--- " + _format_gap(int(gap)) + " later ---\n")
+            kw = ", ".join(s.get("keywords", [])[:8])
+            line = "[" + start_str + " \u2192 " + end_str + "] " + s["summary"]
+            if kw:
+                line += "  [Keywords: " + kw + "]"
+            parts.append(line)
+            total += len(line)
+            prev_end = end_dt
+            if total > MAX_CONTEXT_CHARS * 2 // 3:
+                break
+
+    if recent_entries:
+        parts.append("\n---\nMost recent exchanges:\n")
+        prev_ts = None
+        for entry in sorted(recent_entries, key=lambda e: e.get("timestamp", "")):
+            ts = datetime.fromisoformat(entry["timestamp"])
+            ts_str = ts.strftime("%Y-%m-%d %H:%M")
+            user = entry.get("user", "")[:400]
+            claude = entry.get("claude", "")[:400]
+            if prev_ts is not None:
+                gap_secs = (ts - prev_ts).total_seconds()
+                if gap_secs >= _GAP_THRESHOLD_SECS:
+                    parts.append("\n--- " + _format_gap(int(gap_secs)) + " later ---\n")
+            parts.append("[" + ts_str + "] Jared: " + user + "\n[" + ts_str + "] Response: " + claude)
+            prev_ts = ts
+
+    parts.append("---")
+    return "\n".join(parts)
+
+
 def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> str:
     """
     Run claude -p with recent history as context, save the exchange, return response.
@@ -306,13 +380,15 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
         model:   Claude model — "sonnet", "opus", "haiku".
     """
     channel = _source_channel(source)
+    summaries = load_recent_summaries(channel=None if source in _ALL_CONTEXT_SOURCES else channel)
     if source in _ALL_CONTEXT_SOURCES:
-        context = load_recent_context(channel=None)
+        recent = load_recent_context(hours=2, channel=None)
     else:
-        context = load_recent_context(channel=channel)
-    system_ctx = _build_system_context(context)
+        recent = load_recent_context(hours=2, channel=channel)
+    recent = recent[-RECENT_RAW_COUNT:]
+    system_ctx = _build_hybrid_context(summaries, recent)
 
-    log.info(f"Running claude (source={source}, channel={channel}, model={model}, context_entries={len(context)})")
+    log.info(f"Running claude (source={source}, channel={channel}, model={model}, summaries={len(summaries)}, recent_entries={len(recent)})")
 
     env = os.environ.copy()
     env["CLAUDE_SOURCE"] = source
