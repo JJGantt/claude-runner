@@ -139,9 +139,12 @@ def _clear_session(source: str):
 # ---------------------------------------------------------------------------
 
 def append_exchange(source: str, user_msg: str, claude_response: str,
+                    session_id: str | None = None,
                     trace: list | None = None, has_tool_use: bool = False):
     """Append a single exchange to today's history file via mcp-history."""
     extra = {"has_tool_use": has_tool_use}
+    if session_id:
+        extra["session_id"] = session_id
     if trace is not None:
         extra["trace"] = trace
     _mcp_append_entry(source, user_msg, claude_response, **extra)
@@ -417,5 +420,5 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
     if use_resume and new_session_id:
         _save_session(source, new_session_id)
 
-    append_exchange(source, message, response, trace=trace, has_tool_use=has_tool_use)
+    append_exchange(source, message, response, session_id=new_session_id, trace=trace, has_tool_use=has_tool_use)
     return response
