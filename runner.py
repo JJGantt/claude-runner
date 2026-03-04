@@ -95,6 +95,7 @@ _RESUME_SOURCES = {
     "sonnet-telegram",
     "haiku-telegram",
     "codex-telegram",
+    "pi-telegram",
 }
 
 # Sources that receive full cross-channel context (used by codex_runner)
