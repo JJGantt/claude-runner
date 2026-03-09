@@ -110,7 +110,7 @@ def run_codex(message: str, source: str = "unknown") -> str:
             error_context += f"\n\nThe original user message was: {message}\n\nBriefly explain what went wrong and what the user can do."
             try:
                 err_result = subprocess.run(
-                    ["claude", "-p", "--dangerously-skip-permissions"],
+                    ["claude", "-p", "--permission-mode", "bypassPermissions"],
                     input=error_context,
                     capture_output=True,
                     text=True,

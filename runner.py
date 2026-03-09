@@ -345,7 +345,7 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
         log.warning(f"BOT_TOKEN NOT found in environment for telegram source={source}")
 
     # Build command
-    cmd = ["claude", "-p", "--dangerously-skip-permissions", "--model", model,
+    cmd = ["claude", "-p", "--permission-mode", "bypassPermissions", "--model", model,
            "--output-format", "json", "--verbose"]
     if session_id:
         cmd.extend(["--resume", session_id])
@@ -374,7 +374,7 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
         log.warning(f"Resume failed (rc={result.returncode}), retrying fresh: {stderr[:200]}")
         _clear_session(source)
 
-        cmd_retry = ["claude", "-p", "--dangerously-skip-permissions", "--model", model,
+        cmd_retry = ["claude", "-p", "--permission-mode", "bypassPermissions", "--model", model,
                      "--output-format", "json", "--verbose"]
         if system_ctx:
             cmd_retry.extend(["--append-system-prompt", system_ctx])
@@ -401,7 +401,7 @@ def run_claude(message: str, source: str = "unknown", model: str = "sonnet") -> 
         error_context += f"\n\nThe original user message was: {message}\n\nBriefly explain what went wrong and what the user can do."
         try:
             err_result = subprocess.run(
-                ["claude", "-p", "--dangerously-skip-permissions"],
+                ["claude", "-p", "--permission-mode", "bypassPermissions"],
                 input=error_context,
                 capture_output=True,
                 text=True,
