@@ -30,39 +30,18 @@ import json
 import os
 import subprocess
 import logging
-import importlib.util
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from config import MCP_HISTORY_DIR, HOME_DIR, DATA_DIR
+from config import HOME_DIR, DATA_DIR
 
-# Import shared history I/O from mcp-history using importlib to avoid
-# module name collisions (mcp-history has its own config.py).
-def _import_history_io():
-    _cfg_spec = importlib.util.spec_from_file_location(
-        "mcp_history_config", MCP_HISTORY_DIR / "config.py")
-    _cfg_mod = importlib.util.module_from_spec(_cfg_spec)
-    import sys as _sys
-    _sys.modules["mcp_history_config"] = _cfg_mod
-    # Temporarily alias so history_io's "from config import ..." resolves
-    _orig_config = _sys.modules.get("config")
-    _sys.modules["config"] = _cfg_mod
-    _cfg_spec.loader.exec_module(_cfg_mod)
-    # Now load history_io
-    _io_spec = importlib.util.spec_from_file_location(
-        "mcp_history_io", MCP_HISTORY_DIR / "history_io.py")
-    _io_mod = importlib.util.module_from_spec(_io_spec)
-    _io_spec.loader.exec_module(_io_mod)
-    # Restore our own config
-    if _orig_config is not None:
-        _sys.modules["config"] = _orig_config
-    else:
-        del _sys.modules["config"]
-    return _io_mod
 
-_history_io = _import_history_io()
-_mcp_append_entry = _history_io.append_entry
-_mcp_load_range = _history_io.load_history_range
+# mcp-history was retired/removed (2026-06-24) -> history logging is a permanent no-op. Do NOT call
+# _import_history_io(): it aliases sys.modules["config"] to the (now missing) mcp-history config and,
+# failing mid-load, leaves that alias in place, breaking every later "from config import ..." in the package.
+_history_io = None
+def _mcp_append_entry(*a, **k): return None
+def _mcp_load_range(*a, **k): return []
 
 log = logging.getLogger(__name__)
 
