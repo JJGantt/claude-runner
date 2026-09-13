@@ -1,5 +1,7 @@
 # claude-runner
 
+**Retired.** Nothing imports this: its only callers, telegram-bot and pi-server, are gone. `runner.py` and `codex_runner.py` were removed with the Telegram cleanup; git history has them, and the modules left here are inert.
+
 Atomic package for Claude/Codex CLI execution logic. The single source of truth imported by both [telegram-bot](https://github.com/JJGantt/telegram-bot) and [pi-server](https://github.com/JJGantt/pi-server).
 
 ## Overview
